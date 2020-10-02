@@ -1,0 +1,130 @@
+name: Build Docker Containers
+on:
+    workflow_dispatch:
+        inputs:
+            ref:
+                description: 'Enter the Sylius/Sylius-Standard GIT ref to build'
+                required: true
+
+jobs:
+    build_containers:
+        name: Build Docker Containers (${{ github.event.inputs.ref }})
+        runs-on: ubuntu-latest
+        steps:
+            -   name: Checkout code
+                uses: actions/checkout@v2
+                with:
+                    repository: 'Sylius/Sylius-Standard'
+                    ref: ${{ github.event.inputs.ref }}
+
+            -   name: Prepare PHP
+                id: prep_php
+                run: |
+                    DOCKER_IMAGE=mmenozzi/sylius-php
+                    VERSION="${{ github.event.inputs.ref }}"
+                    TAGS="${DOCKER_IMAGE}:${VERSION}"
+                    if [[ $VERSION =~ ^v[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                      MINOR=${VERSION%.*}
+                      MAJOR=${MINOR%.*}
+                      TAGS="$TAGS,${DOCKER_IMAGE}:${MINOR},${DOCKER_IMAGE}:${MAJOR},${DOCKER_IMAGE}:latest"
+                    elif [ "${{ github.event_name }}" = "push" ]; then
+                      TAGS="$TAGS,${DOCKER_IMAGE}:sha-${GITHUB_SHA::8}"
+                    fi
+                    echo ::set-output name=version::${VERSION}
+                    echo ::set-output name=tags::${TAGS}
+                    echo ::set-output name=created::$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+            -   name: Prepare NodeJS
+                id: prep_nodejs
+                run: |
+                    DOCKER_IMAGE=mmenozzi/sylius-nodejs
+                    VERSION="${{ github.event.inputs.ref }}"
+                    TAGS="${DOCKER_IMAGE}:${VERSION}"
+                    if [[ $VERSION =~ ^v[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                      MINOR=${VERSION%.*}
+                      MAJOR=${MINOR%.*}
+                      TAGS="$TAGS,${DOCKER_IMAGE}:${MINOR},${DOCKER_IMAGE}:${MAJOR},${DOCKER_IMAGE}:latest"
+                    elif [ "${{ github.event_name }}" = "push" ]; then
+                      TAGS="$TAGS,${DOCKER_IMAGE}:sha-${GITHUB_SHA::8}"
+                    fi
+                    echo ::set-output name=version::${VERSION}
+                    echo ::set-output name=tags::${TAGS}
+                    echo ::set-output name=created::$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+            -   name: Prepare NGINX
+                id: prep_nginx
+                run: |
+                    DOCKER_IMAGE=mmenozzi/sylius-nginx
+                    VERSION="${{ github.event.inputs.ref }}"
+                    TAGS="${DOCKER_IMAGE}:${VERSION}"
+                    if [[ $VERSION =~ ^v[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                      MINOR=${VERSION%.*}
+                      MAJOR=${MINOR%.*}
+                      TAGS="$TAGS,${DOCKER_IMAGE}:${MINOR},${DOCKER_IMAGE}:${MAJOR},${DOCKER_IMAGE}:latest"
+                    elif [ "${{ github.event_name }}" = "push" ]; then
+                      TAGS="$TAGS,${DOCKER_IMAGE}:sha-${GITHUB_SHA::8}"
+                    fi
+                    echo ::set-output name=version::${VERSION}
+                    echo ::set-output name=tags::${TAGS}
+                    echo ::set-output name=created::$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+            -   name: Set up QEMU
+                uses: docker/setup-qemu-action@v1
+
+            -   name: Set up Docker Buildx
+                uses: docker/setup-buildx-action@v1
+
+            -   name: Login to DockerHub
+                if: github.event_name != 'pull_request'
+                uses: docker/login-action@v1
+                with:
+                    username: ${{ secrets.DOCKER_USERNAME }}
+                    password: ${{ secrets.DOCKER_PASSWORD }}
+
+            -   name: Build and push Sylius PHP image
+                uses: docker/build-push-action@v2
+                with:
+                    target: sylius_php
+                    push: ${{ github.event_name != 'pull_request' }}
+                    tags: ${{ steps.prep_php.outputs.tags }}
+                    labels: |
+                        org.opencontainers.image.title=${{ github.event.repository.name }}-php
+                        org.opencontainers.image.description=${{ github.event.repository.description }}
+                        org.opencontainers.image.url=${{ github.event.repository.html_url }}
+                        org.opencontainers.image.source=${{ github.event.repository.clone_url }}
+                        org.opencontainers.image.version=${{ steps.prep_php.outputs.version }}
+                        org.opencontainers.image.created=${{ steps.prep_php.outputs.created }}
+                        org.opencontainers.image.revision=${{ github.sha }}
+                        org.opencontainers.image.licenses=${{ github.event.repository.license.spdx_id }}
+
+            -   name: Build and push Sylius NodeJS image
+                uses: docker/build-push-action@v2
+                with:
+                    target: sylius_nodejs
+                    push: ${{ github.event_name != 'pull_request' }}
+                    tags: ${{ steps.prep_nodejs.outputs.tags }}
+                    labels: |
+                        org.opencontainers.image.title=${{ github.event.repository.name }}-nodejs
+                        org.opencontainers.image.description=${{ github.event.repository.description }}
+                        org.opencontainers.image.url=${{ github.event.repository.html_url }}
+                        org.opencontainers.image.source=${{ github.event.repository.clone_url }}
+                        org.opencontainers.image.version=${{ steps.prep_nodejs.outputs.version }}
+                        org.opencontainers.image.created=${{ steps.prep_nodejs.outputs.created }}
+                        org.opencontainers.image.revision=${{ github.sha }}
+                        org.opencontainers.image.licenses=${{ github.event.repository.license.spdx_id }}
+
+            -   name: Build and push Sylius NGINX image
+                uses: docker/build-push-action@v2
+                with:
+                    target: sylius_nginx
+                    push: ${{ github.event_name != 'pull_request' }}
+                    tags: ${{ steps.prep_nginx.outputs.tags }}
+                    labels: |
+                        org.opencontainers.image.title=${{ github.event.repository.name }}-nginx
+                        org.opencontainers.image.description=${{ github.event.repository.description }}
+                        org.opencontainers.image.url=${{ github.event.repository.html_url }}
+                        org.opencontainers.image.source=${{ github.event.repository.clone_url }}
+                        org.opencontainers.image.version=${{ steps.prep_nginx.outputs.version }}
+                        org.opencontainers.image.created=${{ steps.prep_nginx.outputs.created }}
+                        org.opencontainers.image.revision=${{ github.sha }}
+                        org.opencontainers.image.licenses=${{ github.event.repository.license.spdx_id }}
